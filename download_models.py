@@ -18,6 +18,7 @@ import hashlib
 import os
 import shutil
 import sys
+import ssl
 import tarfile
 import urllib.request
 
@@ -54,7 +55,7 @@ def human(n):
         n /= 1024.0
 
 
-def fetch(url, dest, proxy=None):
+def fetch(url, dest, proxy=None, ctx=None):
     """下载到 dest，已存在且非空则跳过。支持断点续传。"""
     if os.path.exists(dest) and os.path.getsize(dest) > 1024:
         print("  已存在，跳过  %s (%s)" % (dest, human(os.path.getsize(dest))))
@@ -70,7 +71,8 @@ def fetch(url, dest, proxy=None):
         req.add_header("Range", "bytes=%d-" % have)
 
     try:
-        with urllib.request.urlopen(req, timeout=60) as r, open(part, "ab" if have else "wb") as f:
+        with urllib.request.urlopen(req, timeout=60, context=ctx) as r, \
+                open(part, "ab" if have else "wb") as f:
             total = int(r.headers.get("Content-Length") or 0) + have
             done = have
             while True:
@@ -97,7 +99,6 @@ def fetch(url, dest, proxy=None):
 def extract_zipvoice():
     tar = os.path.join(HERE, ZIPVOICE_TAR)
     if os.path.isdir(os.path.join(HERE, ZIPVOICE_DIR)):
-        print("  已解压，跳过  %s/" % ZIPVOICE_DIR)
         return True
     if not os.path.exists(tar):
         print("  找不到 %s" % tar)
@@ -159,17 +160,31 @@ def main():
                     help="huggingface.co 不通时，改用 hf-mirror.com")
     ap.add_argument("--gh-proxy", default="",
                     help="github 不通时填代理前缀，如 https://ghfast.top")
+    ap.add_argument("--insecure", action="store_true",
+                    help="关闭 HTTPS 证书校验。有些网络（含部分代理）会做中间人，"
+                         "报 CERTIFICATE_VERIFY_FAILED 时可用；确认网络可信再用")
     args = ap.parse_args()
 
     os.chdir(HERE)
     hf_host = "https://hf-mirror.com" if args.hf_mirror else HF
 
+    ctx = None
+    if args.insecure:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        print("⚠ --insecure：已关闭证书校验（只在你确认网络可信时用）\n")
+
     ok = True
     print("== 合成必需 ==")
+    already = os.path.isdir(os.path.join(HERE, ZIPVOICE_DIR))
     for dest, url in TTS_TARGETS:
+        if dest == ZIPVOICE_TAR and already:
+            print("  已解压，跳过  %s/（不再下载压缩包）" % ZIPVOICE_DIR)
+            continue
         u = url.replace(HF, hf_host) if url.startswith(HF) else url
         proxy = args.gh_proxy if u.startswith("https://github.com") else ""
-        if not fetch(u, dest, proxy):
+        if not fetch(u, dest, proxy, ctx):
             ok = False
     if ok:
         ok = extract_zipvoice()
@@ -179,7 +194,7 @@ def main():
         for dest, url in VERIFY_TARGETS:
             u = url.replace(HF, hf_host)
             proxy = args.gh_proxy if u.startswith("https://github.com") else ""
-            if not fetch(u, dest, proxy):
+            if not fetch(u, dest, proxy, ctx):
                 ok = False
         sv = os.path.join(HERE, "sv", "campplus.onnx")
         if os.path.exists(sv):

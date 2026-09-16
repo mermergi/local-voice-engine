@@ -82,6 +82,13 @@ python3 download_models.py --verify   # 可选：ASR + 声纹模型，用于自�
 python3 download_models.py --hf-mirror --gh-proxy https://ghfast.top
 ```
 
+如果报 `CERTIFICATE_VERIFY_FAILED`（有些网络或代理会做中间人），
+确认网络可信后可以加 `--insecure` 跳过证书校验：
+
+```bash
+python3 download_models.py --hf-mirror --insecure
+```
+
 ### 3. 建一个音色
 
 **先准备一段参考音频**（下面「怎么弄到参考音频」有详细建议），然后：
