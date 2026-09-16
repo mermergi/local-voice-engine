@@ -1,0 +1,24 @@
+# 模型（体积大，且各自有独立许可，请用 download_models.py 下载）
+*.onnx
+*.tar.bz2
+*.part
+sherpa-onnx-*
+asr
+sv
+vocos_24khz.onnx
+
+# 音色库：包含你的参考音频，不要提交
+voices/
+
+# 运行时产物
+__pycache__/
+*.pyc
+*.log
+*.mp3
+*.wav
+!test_assets/*.wav
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store
