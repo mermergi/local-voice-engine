@@ -21,7 +21,28 @@ import wave
 import numpy as np
 import sherpa_onnx
 
-MODEL_DIR = "sherpa-onnx-zipvoice-distill-int8-zh-en-emilia"
+MODEL_DIR_INT8 = "sherpa-onnx-zipvoice-distill-int8-zh-en-emilia"
+MODEL_DIR_FP32 = "sherpa-onnx-zipvoice-distill-fp32-zh-en-emilia"
+
+
+def pick_model_dir():
+    """选模型目录：环境变量 ZIPVOICE_MODEL > int8 > fp32。
+
+    两版都支持。int8 小(146MB)且快(RTF~0.9)，fp32 大(494MB)且慢(RTF~2.2，
+    首段音频 2.3s -> 9.7s)。作者在 8 核 arm64 上没能用客观指标分出两者音质差异
+    （高频能量/频谱平坦度的重复测量标准差大于两者差值），所以默认取快的 int8。
+    想自己听：ZIPVOICE_MODEL=sherpa-onnx-zipvoice-distill-fp32-zh-en-emilia bash start.sh
+    """
+    env = os.environ.get("ZIPVOICE_MODEL")
+    if env:
+        return env
+    for d in (MODEL_DIR_INT8, MODEL_DIR_FP32):
+        if os.path.isdir(d):
+            return d
+    return MODEL_DIR_INT8
+
+
+MODEL_DIR = MODEL_DIR_INT8   # 兼容旧引用
 
 # 很多转录文本里混着不少「不是字」的符号。实测：把它们当字喂给参考文本，
 # 模型会对齐错，合成结果开头冒出「跳达」「秋打」这类杂音。
@@ -66,14 +87,18 @@ def write_wav(path, samples, sample_rate):
 
 
 def build_tts(num_threads=4, debug=False):
+    mdir = pick_model_dir()
+    # int8 与 fp32 的权重文件名不同，按目录里实际有的取
+    enc = "encoder.int8.onnx" if os.path.exists(os.path.join(mdir, "encoder.int8.onnx")) else "encoder.onnx"
+    dec = "decoder.int8.onnx" if os.path.exists(os.path.join(mdir, "decoder.int8.onnx")) else "decoder.onnx"
     cfg = sherpa_onnx.OfflineTtsConfig(
         model=sherpa_onnx.OfflineTtsModelConfig(
             zipvoice=sherpa_onnx.OfflineTtsZipvoiceModelConfig(
-                tokens=os.path.join(MODEL_DIR, "tokens.txt"),
-                encoder=os.path.join(MODEL_DIR, "encoder.int8.onnx"),
-                decoder=os.path.join(MODEL_DIR, "decoder.int8.onnx"),
-                data_dir=os.path.join(MODEL_DIR, "espeak-ng-data"),
-                lexicon=os.path.join(MODEL_DIR, "lexicon.txt"),
+                tokens=os.path.join(mdir, "tokens.txt"),
+                encoder=os.path.join(mdir, enc),
+                decoder=os.path.join(mdir, dec),
+                data_dir=os.path.join(mdir, "espeak-ng-data"),
+                lexicon=os.path.join(mdir, "lexicon.txt"),
                 vocoder="vocos_24khz.onnx",
             ),
             debug=debug,

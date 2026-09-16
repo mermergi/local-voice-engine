@@ -9,7 +9,7 @@
 set -u
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
-PORT="${PORT:-8790}"
+PORT="${PORT:-8765}"
 LOG="${TMPDIR:-/tmp}/tts_server.log"
 
 cd "$DIR" || { echo "进不去目录: $DIR"; exit 1; }

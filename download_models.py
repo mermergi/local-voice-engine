@@ -26,6 +26,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 ZIPVOICE_TAR = "sherpa-onnx-zipvoice-distill-int8-zh-en-emilia.tar.bz2"
 ZIPVOICE_DIR = "sherpa-onnx-zipvoice-distill-int8-zh-en-emilia"
+# 可选：fp32 版。更大更慢，音质差异作者没能客观测出来，见 README「模型选择」
+ZIPVOICE_FP32_TAR = "sherpa-onnx-zipvoice-distill-fp32-zh-en-emilia.tar.bz2"
+ZIPVOICE_FP32_DIR = "sherpa-onnx-zipvoice-distill-fp32-zh-en-emilia"
 
 GH = "https://github.com/k2-fsa/sherpa-onnx/releases/download"
 HF = "https://huggingface.co"
@@ -96,14 +99,14 @@ def fetch(url, dest, proxy=None, ctx=None):
     return True
 
 
-def extract_zipvoice():
-    tar = os.path.join(HERE, ZIPVOICE_TAR)
-    if os.path.isdir(os.path.join(HERE, ZIPVOICE_DIR)):
+def extract_zipvoice(tar_name, dir_name):
+    tar = os.path.join(HERE, tar_name)
+    if os.path.isdir(os.path.join(HERE, dir_name)):
         return True
     if not os.path.exists(tar):
         print("  找不到 %s" % tar)
         return False
-    print("  解压 %s ..." % ZIPVOICE_TAR)
+    print("  解压 %s ..." % tar_name)
     with tarfile.open(tar, "r:bz2") as t:
         t.extractall(HERE)
     os.remove(tar)
@@ -160,6 +163,8 @@ def main():
                     help="huggingface.co 不通时，改用 hf-mirror.com")
     ap.add_argument("--gh-proxy", default="",
                     help="github 不通时填代理前缀，如 https://ghfast.top")
+    ap.add_argument("--fp32", action="store_true",
+                    help="额外下载 fp32 模型（更大更慢；音质差异作者未能客观测出）")
     ap.add_argument("--insecure", action="store_true",
                     help="关闭 HTTPS 证书校验。有些网络（含部分代理）会做中间人，"
                          "报 CERTIFICATE_VERIFY_FAILED 时可用；确认网络可信再用")
@@ -187,7 +192,18 @@ def main():
         if not fetch(u, dest, proxy, ctx):
             ok = False
     if ok:
-        ok = extract_zipvoice()
+        ok = extract_zipvoice(ZIPVOICE_TAR, ZIPVOICE_DIR)
+
+    if args.fp32:
+        print("\n== 可选：fp32 模型（约 478 MB，慢 2.5 倍）==")
+        if os.path.isdir(os.path.join(HERE, ZIPVOICE_FP32_DIR)):
+            print("  已解压，跳过  %s/" % ZIPVOICE_FP32_DIR)
+        else:
+            u = GH + "/tts-models/" + ZIPVOICE_FP32_TAR
+            if fetch(u, ZIPVOICE_FP32_TAR, args.gh_proxy, ctx):
+                ok = extract_zipvoice(ZIPVOICE_FP32_TAR, ZIPVOICE_FP32_DIR) and ok
+            else:
+                ok = False
 
     if args.verify:
         print("\n== 验证工具（可选）==")

@@ -74,7 +74,7 @@ SHORT_TEXT_LIMIT = 4
 SHORT_TEXT_SPEED = 1.1
 
 # 流式模式下每段最多多少字。切得越细首段越快，但段间停顿也越多。
-STREAM_CHUNK_CHARS = 28
+STREAM_CHUNK_CHARS = 60
 
 # 音色库目录：voices/<角色名>/ 下一个文件夹就是一个音色
 VOICES_DIR = os.path.join(HERE, "voices")
@@ -197,28 +197,24 @@ def worker_main(args):
                 print(json.dumps({"ok": False, "err": "没有可用音色：voices/ 为空"}), flush=True)
                 continue
             ref, sr, ref_text = get_ref(ref_path, req.get("ref_text") or args.ref_text or "")
+            mcs = req.get("min_char_in_sentence", 30)
 
-            chunks, rate = [], 24000
-            for piece in split_sentences(text):
-                gen = sherpa_onnx.GenerationConfig()
-                gen.reference_audio = ref
-                gen.reference_sample_rate = sr
-                gen.reference_text = ref_text
-                gen.num_steps = 4
-                gen.speed = speed
-                gen.extra["min_char_in_sentence"] = "30"
-                audio = tts.generate(piece, gen)
-                if len(audio.samples) == 0:
-                    continue
-                rate = audio.sample_rate
-                chunks.append(np.asarray(audio.samples, dtype=np.float32))
-                chunks.append(np.zeros(int(rate * 0.12), dtype=np.float32))
-
-            if not chunks:
+            # 整段一次生成。
+            # 不要按句切开分别 generate 再 concat —— 每次 generate 都是独立随机采样，
+            # 段与段之间音色会变（听感：前半句一个声音、后半句换成另一个声音）。
+            gen = sherpa_onnx.GenerationConfig()
+            gen.reference_audio = ref
+            gen.reference_sample_rate = sr
+            gen.reference_text = ref_text
+            gen.num_steps = 4
+            gen.speed = speed
+            gen.extra["min_char_in_sentence"] = str(mcs)
+            audio = tts.generate(text, gen)
+            if len(audio.samples) == 0:
                 print(json.dumps({"ok": False, "err": "模型没有产出音频"}), flush=True)
                 continue
-
-            samples = np.concatenate(chunks)
+            rate = audio.sample_rate
+            samples = np.asarray(audio.samples, dtype=np.float32)
             pcm = np.clip(samples * 32767.0, -32767.0, 32767.0).astype(np.int16)
             with wave.open(out, "wb") as w:
                 w.setframerate(rate)
@@ -289,14 +285,15 @@ class Worker:
         line = self.proc.stdout.readline()
         return bool(line)
 
-    def request(self, text, speed, out, ref=None, ref_text=None):
+    def request(self, text, speed, out, ref=None, ref_text=None, min_char_in_sentence=30):
         with self.lock:
             if self.proc is None or self.proc.poll() is not None:
                 if self.proc is not None:
                     self.restarts += 1
                 if not self.start():
                     raise RuntimeError("合成进程启动失败")
-            payload = {"text": text, "speed": speed, "out": out}
+            payload = {"text": text, "speed": speed, "out": out,
+                       "min_char_in_sentence": min_char_in_sentence}
             if ref:
                 payload["ref"] = ref
             if ref_text is not None:
@@ -513,6 +510,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(500, b"no voice available (voices/ is empty)", "text/plain; charset=utf-8")
             return
 
+        mcs = q.get("min_char_in_sentence") or q.get("mcs")
+        mcs = int(mcs[0]) if mcs else 30
         stream = (q.get("stream") or q.get("s") or ["0"])[0].lower() in ("1", "true", "yes", "on")
         if stream:
             self._stream_tts(text, speed, fmt, voice)
@@ -521,7 +520,7 @@ class Handler(BaseHTTPRequestHandler):
         t0 = time.time()
         tmp = tempfile.mktemp(suffix=".wav")
         try:
-            resp = WORKER.request(text, speed, tmp, voice["ref"], voice["ref_text"])
+            resp = WORKER.request(text, speed, tmp, voice["ref"], voice["ref_text"], mcs)
         except Exception as e:  # noqa: BLE001
             STATS["fail"] += 1
             print("  合成失败: %s" % e, flush=True)
