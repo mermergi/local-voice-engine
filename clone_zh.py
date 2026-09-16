@@ -23,7 +23,7 @@ import sherpa_onnx
 
 MODEL_DIR = "sherpa-onnx-zipvoice-distill-int8-zh-en-emilia"
 
-# 站点台词里混着不少「不是字」的符号。实测：把它们当字喂给参考文本，
+# 很多转录文本里混着不少「不是字」的符号。实测：把它们当字喂给参考文本，
 # 模型会对齐错，合成结果开头冒出「跳达」「秋打」这类杂音。
 # 例：参考文本末尾多余的 '~' 会让模型对不齐，去掉就干净了。
 _NOISE_CHARS = "~～…—♪"          # 拖音/省略/破折/音符
@@ -32,7 +32,7 @@ _BRACKET_NOTE = re.compile(r"[（(][^）)]*[）)]")   # （建立羁绊）这类
 
 
 def clean_text(s, drop_brackets=False):
-    """把台词清理成「模型能对齐的、真的被念出来的字」。"""
+    """把文本清理成「模型能对齐的、真的被念出来的字」。"""
     s = s or ""
     if drop_brackets:
         s = _BRACKET_NOTE.sub("", s)
@@ -96,7 +96,7 @@ def main():
     ap.add_argument("--speed", type=float, default=1.0)
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--min-char", default="30", help="extra['min_char_in_sentence']")
-    ap.add_argument("--raw-text", action="store_true", help="不做台词清理，照原样喂")
+    ap.add_argument("--raw-text", action="store_true", help="不做文本清理，照原样喂")
     ap.add_argument("--drop-brackets", action="store_true", help="额外去掉（建立羁绊）这类注释")
     args = ap.parse_args()
 
